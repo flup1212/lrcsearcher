@@ -1,3 +1,4 @@
+import time
 import requests
 import mutagen
 from mutagen.mp3 import MP3
@@ -5,24 +6,66 @@ from mutagen.easyid3 import EasyID3
 import os
 import sys
 
-def get_lyrics(artist_name, track_name, album_name, duration):
-    response = requests.get(f"https://lrclib.net/api/get?artist_name={artist_name}&track_name={track_name}&album_name={album_name}&duration={duration}")
-    data = response.json()
+def api_call(artist_name, track_name, album_name, duration, header):
+    response = requests.get(f"https://lrclib.net/api/get?artist_name={artist_name}&track_name={track_name}&album_name={album_name}&duration={duration}", headers=header)
+    return response
 
-    if response.status_code == 200:
-        if data["syncedLyrics"]:
-            print("Synced lyrics found")
-            lyrics = data["syncedLyrics"]
-            return lyrics
-        else:
-            print("Plain lyrics found")
-            lyrics = data["plainLyrics"]
-            return lyrics
-    if response.status_code == 404:
-        print("\033[41mNo lyrics found\033[000m\n")
-    else:
-        print("Error "+str(response.status_code))
-        return
+def get_metadata(song):
+    metadata = mutagen.File(song)
+    return metadata
+
+def replace_characters(string):
+    updated_string = string.replace('/', '_').replace('<', '').replace('>', '').replace(':', '').replace('"', '').replace('|', '').replace('?', '').replace('*', '')
+    return updated_string
+
+def get_lyrics(response):
+    data = response.json()
+    if data["syncedLyrics"]:
+        print("Synced lyrics found")
+
+        lyrics = data["syncedLyrics"]
+        return lyrics
+    elif data["plainLyrics"]:
+        print("Plain lyrics found")
+
+        lyrics = data["plainLyrics"]
+        return lyrics
+        
+
+# def get_lyrics(artist_name, track_name, album_name, duration):
+#     artist = artist_name
+#     track = track_name
+#     album = album_name
+#     leng = duration
+
+#     response = requests.get(f"https://lrclib.net/api/get?artist_name={artist}&track_name={track}&album_name={album}&duration={leng}")
+#     data = response.json()
+#     code = response.status_code
+
+#     if response.status_code == 200:
+#         if data["syncedLyrics"]:
+#             print("Synced lyrics found")
+#             lyrics = data["syncedLyrics"]
+#             return lyrics
+#         else:
+#             print("Plain lyrics found")
+#             lyrics = data["plainLyrics"]
+#             return lyrics
+#     elif response.status_code == 429:
+#         retry_after = response.json().get("retry-after", 0)
+#         if retry_after > 0:
+#             print(f"Rate limit exceeded, retrying in {retry_after}")
+#             time.sleep(retry_after)
+#             get_lyrics(artist, track, album, leng)
+#         else:
+#             print("Rate limit exceeded, retrying in 1.5 seconds")
+#             time.sleep(1.5)
+#             get_lyrics(artist, track, album, leng)
+#     elif response.status_code == 404:
+#         print("\033[41mNo lyrics found\033[000m\n")
+#     else:
+#         print("Error "+str(response.status_code))
+#         return
     
 def get_songs(start_dir):
     music_files = []
@@ -33,14 +76,6 @@ def get_songs(start_dir):
                 music_files.append(str(root+'/'+file))
 
     return music_files
-
-def get_metadata(song):
-    metadata = mutagen.File(song)
-    return metadata
-
-def replace_characters(string):
-    updated_string = string.replace('/', '_').replace('<', '').replace('>', '').replace(':', '').replace('"', '').replace('|', '').replace('?', '').replace('*', '')
-    return updated_string
 
 # "TALB": "album"
 # "TIT2": "title"
@@ -62,6 +97,8 @@ songs = get_songs(str(sys.argv[1]))
 print("\nSongs found: "+str(len(songs))+"\n")
 
 songs.sort()
+
+header = {"User-Agent":"lrcsearcher v1.0 (https://github.com/flup1212/lrcsearcher)"}
 
 iteration = 0
 for song in songs:
@@ -120,8 +157,11 @@ for song in songs:
 
     # Search for lyrics
     print("Searching lyrics for " + track + " by " + artist + "...\n")
-    lyrics = get_lyrics(artist, track, album, duration)
-    if lyrics:
+
+    response = api_call(artist, track, album, duration, header)
+    time.sleep(0.7)
+    if response.status_code == 200:
+        lyrics = get_lyrics(response)
 
         # Create lyrics file
         track_legal = str(song).replace('.flac', '').replace('.mp3', '')+".lrc"
@@ -132,9 +172,9 @@ for song in songs:
         file.close()
         print("\033[102;030mDone\033[000m\n")
         found.append(song)
-
     else:
         not_found.append([track, artist])
+        print("Lyrics not found: "+response.status_code)
 
 print("Completed\n")
 print("Lyrics found: "+str(len(found))+"\n")
